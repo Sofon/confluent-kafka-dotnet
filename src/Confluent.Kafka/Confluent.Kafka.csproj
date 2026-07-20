@@ -37,11 +37,12 @@
     - Set EmbedLibrdkafka=false to restore the stock behaviour.
     - Set EmbedLibrdkafkaRuntimes to a subset (e.g. "win-x64") to reduce the
       size of the resulting assembly.
+
+    Both properties are defaulted in ../Directory.Build.props (sibling projects
+    react to EmbedLibrdkafka too, see ../Directory.Build.targets).
   -->
   <PropertyGroup>
     <LibrdkafkaRedistVersion>2.15.0</LibrdkafkaRedistVersion>
-    <EmbedLibrdkafka Condition="'$(EmbedLibrdkafka)' == ''">true</EmbedLibrdkafka>
-    <EmbedLibrdkafkaRuntimes Condition="'$(EmbedLibrdkafkaRuntimes)' == ''">win-x64;win-x86;linux-x64;linux-arm64;linux-s390x;osx-x64;osx-arm64</EmbedLibrdkafkaRuntimes>
     <!-- Ensure the managed dependency assemblies show up in ReferenceCopyLocalPaths so they can be embedded. -->
     <CopyLocalLockFileAssemblies Condition="'$(EmbedLibrdkafka)' == 'true'">true</CopyLocalLockFileAssemblies>
     <_EmbedManagedDependencyNames>;System.Memory;System.Buffers;System.Numerics.Vectors;System.Runtime.CompilerServices.Unsafe;</_EmbedManagedDependencyNames>
@@ -67,6 +68,19 @@
   <!-- Allows the net462 target to be built on non-Windows machines. -->
   <ItemGroup Condition=" '$(TargetFramework)' == 'net462' and '$(OS)' != 'Windows_NT' ">
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!--
+    For net462 the managed dependencies are merged into Confluent.Kafka.dll with
+    ILRepack rather than embedded as resources: .NET Framework resolves assembly
+    references while JIT compiling, which can happen before this assembly's
+    module initializer has had a chance to register the AssemblyResolve fallback
+    (and a stale System.Memory.dll in the host application then fails the load
+    with a ref/def version mismatch). After merging there are no external
+    references left to resolve.
+  -->
+  <ItemGroup Condition=" '$(TargetFramework)' == 'net462' and '$(EmbedLibrdkafka)' == 'true' ">
+    <PackageReference Include="ILRepack.Lib.MSBuild.Task" Version="2.0.46" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>
@@ -143,8 +157,11 @@ foreach (var item in Files)
         <LogicalName>librdkafka.%(_LibrdkafkaNative.Rid).%(Filename)%(Extension).gz</LogicalName>
       </_LibrdkafkaNative>
 
-      <_EmbeddedManagedDep Include="@(ReferenceCopyLocalPaths)"
-                           Condition="'%(Extension)' == '.dll' and $(_EmbedManagedDependencyNames.Contains(';%(Filename);'))" />
+      <!-- net462: merged with ILRepack (see MergeManagedDependencies); other targets: embedded as resources. -->
+      <_ManagedDep Include="@(ReferenceCopyLocalPaths)"
+                   Condition="'%(Extension)' == '.dll' and $(_EmbedManagedDependencyNames.Contains(';%(Filename);'))" />
+      <_MergedManagedDep Include="@(_ManagedDep)" Condition="'$(TargetFramework)' == 'net462'" />
+      <_EmbeddedManagedDep Include="@(_ManagedDep)" Condition="'$(TargetFramework)' != 'net462'" />
       <_EmbeddedManagedDep>
         <Destination>$(BaseIntermediateOutputPath)managed-embed/$(TargetFramework)/%(Filename)%(Extension).gz</Destination>
         <LogicalName>embedded.assembly.%(Filename)%(Extension).gz</LogicalName>
@@ -159,9 +176,43 @@ foreach (var item in Files)
                         WithCulture="false"
                         Type="Non-Resx"
                         Visible="false" />
-      <!-- The embedded managed dependencies must not be copied next to the output assembly. -->
-      <ReferenceCopyLocalPaths Remove="@(_EmbeddedManagedDep)" />
+      <!-- The embedded/merged managed dependencies must not be copied next to the output assembly. -->
+      <ReferenceCopyLocalPaths Remove="@(_ManagedDep)" />
     </ItemGroup>
+  </Target>
+
+  <Target Name="MergeManagedDependencies"
+          Condition="'$(TargetFramework)' == 'net462' and '$(EmbedLibrdkafka)' == 'true'"
+          AfterTargets="CoreCompile"
+          BeforeTargets="CopyFilesToOutputDirectory"
+          DependsOnTargets="EmbedSingleFileDependencies"
+          Inputs="@(IntermediateAssembly);@(_MergedManagedDep)"
+          Outputs="$(IntermediateOutputPath)ilrepack.stamp">
+    <PropertyGroup>
+      <_ILRepackOutDir>$(IntermediateOutputPath)ilrepack/</_ILRepackOutDir>
+    </PropertyGroup>
+    <ItemGroup>
+      <_ILRepackLibDir Include="@(ReferencePath->'%(RootDir)%(Directory)')" />
+      <_ILRepackLibDirDistinct Include="@(_ILRepackLibDir->Distinct())" />
+    </ItemGroup>
+
+    <MakeDir Directories="$(_ILRepackOutDir)" />
+    <ILRepack Parallel="true"
+              InputAssemblies="@(IntermediateAssembly);@(_MergedManagedDep)"
+              LibraryPath="@(_ILRepackLibDirDistinct)"
+              KeyFile="$(MSBuildProjectDirectory)/$(AssemblyOriginatorKeyFile)"
+              XmlDocumentation="true"
+              OutputFile="$(_ILRepackOutDir)$(TargetFileName)" />
+
+    <Copy SourceFiles="$(_ILRepackOutDir)$(TargetFileName)" DestinationFiles="@(IntermediateAssembly)" />
+    <Copy SourceFiles="$(_ILRepackOutDir)$(AssemblyName).pdb"
+          DestinationFiles="@(IntermediateAssembly->'%(RootDir)%(Directory)%(Filename).pdb')"
+          Condition="Exists('$(_ILRepackOutDir)$(AssemblyName).pdb')" />
+    <Copy SourceFiles="$(_ILRepackOutDir)$(AssemblyName).xml"
+          DestinationFiles="@(DocFileItem)"
+          Condition="Exists('$(_ILRepackOutDir)$(AssemblyName).xml') and '@(DocFileItem)' != ''" />
+
+    <Touch Files="$(IntermediateOutputPath)ilrepack.stamp" AlwaysCreate="true" />
   </Target>
 
 </Project>

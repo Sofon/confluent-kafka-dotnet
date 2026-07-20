@@ -1,0 +1,9 @@
+<Project>
+  <!--
+    Intentionally empty. The presence of this file disables the default merge
+    target shipped with ILRepack.Lib.MSBuild.Task (which would re-merge the
+    build output in place without strong-name signing). The actual merging for
+    the net462 target is performed by the MergeManagedDependencies target in
+    Confluent.Kafka.csproj.
+  -->
+</Project>

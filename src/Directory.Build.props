@@ -4,5 +4,19 @@
     <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
   </PropertyGroup>
 
+  <!--
+    Single-DLL build support (see Confluent.Kafka.csproj and DEVELOPER.md).
+    Defined here (rather than in Confluent.Kafka.csproj) so that sibling
+    projects can react to it - when enabled, Confluent.Kafka.dll (net462)
+    has the System.Memory family merged in as public types, which conflicts
+    with the standalone System.Memory package pulled in by the
+    Confluent.SchemaRegistry.* net462 targets; those targets are therefore
+    disabled while EmbedLibrdkafka is on (see Directory.Build.targets).
+  -->
+  <PropertyGroup>
+    <EmbedLibrdkafka Condition="'$(EmbedLibrdkafka)' == ''">true</EmbedLibrdkafka>
+    <EmbedLibrdkafkaRuntimes Condition="'$(EmbedLibrdkafkaRuntimes)' == ''">win-x64;win-x86;linux-x64;linux-arm64;linux-s390x;osx-x64;osx-arm64</EmbedLibrdkafkaRuntimes>
+  </PropertyGroup>
+
   <Import Project="../Directory.Build.props"/>
 </Project>

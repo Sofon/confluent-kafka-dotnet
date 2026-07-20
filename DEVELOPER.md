@@ -42,14 +42,33 @@ dotnet test
 ## Single-DLL builds
 
 By default, `Confluent.Kafka.csproj` builds a self-contained `Confluent.Kafka.dll`:
-the librdkafka native libraries and (for the netstandard2.0/net462 targets) the
-managed dependency assemblies (`System.Memory` etc.) are gzip-compressed and
-embedded into the assembly as resources instead of being deployed next to it.
-At runtime the native libraries are extracted to a per-librdkafka-version cache
-directory (`%TEMP%/confluent-kafka-dotnet/...` by default, override with the
+the librdkafka native libraries are gzip-compressed and embedded into the
+assembly as resources instead of being deployed next to it. At runtime they are
+extracted to a per-librdkafka-version cache directory
+(`%TEMP%/confluent-kafka-dotnet/...` by default, override with the
 `CONFLUENT_KAFKA_LIBRDKAFKA_EXTRACT_DIR` environment variable) and loaded
-automatically; embedded managed dependencies are only used when the runtime
-cannot find them through regular means.
+automatically.
+
+The managed dependencies (`System.Memory`, `System.Buffers`,
+`System.Numerics.Vectors`, `System.Runtime.CompilerServices.Unsafe`; only
+needed by the netstandard2.0/net462 targets) are handled per target:
+
+- **net462**: merged directly into `Confluent.Kafka.dll` with ILRepack, so the
+  assembly has no references to them at all. This is the variant to use from
+  .NET Framework host applications - assembly references are resolved during
+  JIT compilation there, which can happen before any hook installed by this
+  library could run, and a stale `System.Memory.dll` in the host would
+  otherwise fail the load with a ref/def mismatch.
+- **netstandard2.0**: embedded as gzip resources and resolved via an
+  `AppDomain.AssemblyResolve` fallback; on .NET Core/5+ these assemblies are
+  part of the framework and the fallback never fires.
+- **net8.0/net10.0**: no managed dependencies to begin with.
+
+Note: while the single-DLL build is enabled, the net462 target of the
+`Confluent.SchemaRegistry.*` sibling projects is disabled (the merged-in public
+`System.Memory` types conflict with the standalone `System.Memory` package
+pulled in by their other dependencies); build with `-p:EmbedLibrdkafka=false`
+to restore them.
 
 ```
 dotnet build -c Release src/Confluent.Kafka/Confluent.Kafka.csproj

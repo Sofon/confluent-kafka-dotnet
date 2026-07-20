@@ -1,0 +1,15 @@
+<Project>
+  <!--
+    When the single-DLL build is enabled (EmbedLibrdkafka=true, the default),
+    the net462 Confluent.Kafka.dll has System.Memory/System.Buffers/... merged
+    into it as public types. The other net462 targets in this repository cannot
+    be compiled against that assembly (the same types are also provided by the
+    System.Memory package pulled in transitively by their other dependencies,
+    causing CS0433 ambiguities), so their net462 target is disabled here.
+    Build with -p:EmbedLibrdkafka=false to restore them.
+  -->
+  <PropertyGroup Condition="'$(EmbedLibrdkafka)' == 'true' and '$(MSBuildProjectName)' != 'Confluent.Kafka' and $(TargetFrameworks.Contains('net462'))">
+    <!-- Unescape: property function results have their semicolons escaped, which would break the list. -->
+    <TargetFrameworks>$([MSBuild]::Unescape($(TargetFrameworks.Replace('net462', '').Replace(';;', ';').Trim(';'))))</TargetFrameworks>
+  </PropertyGroup>
+</Project>
