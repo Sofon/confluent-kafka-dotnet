@@ -38,3 +38,31 @@ To execute, enter the relevant directory and run:
 ```
 dotnet test
 ```
+
+## Single-DLL builds
+
+By default, `Confluent.Kafka.csproj` builds a self-contained `Confluent.Kafka.dll`:
+the librdkafka native libraries and (for the netstandard2.0/net462 targets) the
+managed dependency assemblies (`System.Memory` etc.) are gzip-compressed and
+embedded into the assembly as resources instead of being deployed next to it.
+At runtime the native libraries are extracted to a per-librdkafka-version cache
+directory (`%TEMP%/confluent-kafka-dotnet/...` by default, override with the
+`CONFLUENT_KAFKA_LIBRDKAFKA_EXTRACT_DIR` environment variable) and loaded
+automatically; embedded managed dependencies are only used when the runtime
+cannot find them through regular means.
+
+```
+dotnet build -c Release src/Confluent.Kafka/Confluent.Kafka.csproj
+```
+
+MSBuild properties:
+
+- `EmbedLibrdkafka` (default `true`) - set to `false` to restore the stock
+  behaviour (librdkafka.redist native libraries copied next to the assembly).
+- `EmbedLibrdkafkaRuntimes` (default: all runtimes shipped in librdkafka.redist)
+  - semicolon separated list of runtime identifiers to embed. Embedding all
+  runtimes results in a ~43 MB assembly; embedding a single runtime, e.g.
+  `-p:EmbedLibrdkafkaRuntimes=win-x64`, reduces it to ~5 MB.
+
+Explicitly loading librdkafka from a custom path via `Library.Load(path)`
+still takes precedence over the embedded libraries.

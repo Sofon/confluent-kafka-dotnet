@@ -556,6 +556,19 @@ namespace Confluent.Kafka.Impl
                     return false;
                 }
 
+                if (userSpecifiedPath == null &&
+                    EmbeddedLibrdkafka.TryExtractAndPreload(out var embeddedPath, out var embeddedPreloaded))
+                {
+                    // Native libraries embedded into this assembly (single-DLL build)
+                    // were extracted. If they could not also be preloaded (with a
+                    // DllImport resolver registered), pass the extracted path through
+                    // the platform specific loading below.
+                    if (!embeddedPreloaded)
+                    {
+                        userSpecifiedPath = embeddedPath;
+                    }
+                }
+
 #if NET462
 
                 if (!MonoSupport.IsMonoRuntime)

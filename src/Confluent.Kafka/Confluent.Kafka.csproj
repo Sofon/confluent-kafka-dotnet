@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <ProjectTypeGuids>{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}</ProjectTypeGuids>
     <Authors>Confluent Inc.;Andreas Heider</Authors>
@@ -23,9 +23,39 @@
     <AssemblyOriginatorKeyFile>Confluent.Kafka.snk</AssemblyOriginatorKeyFile>
   </PropertyGroup>
 
+  <!--
+    Single-DLL build support.
+
+    When EmbedLibrdkafka is true (the default), the librdkafka native libraries
+    and the managed dependency assemblies (System.Memory etc., only needed by
+    the netstandard2.0/net462 targets) are gzip-compressed and embedded into
+    Confluent.Kafka.dll as resources instead of being copied next to it. At
+    runtime they are extracted / loaded automatically (see
+    Impl/EmbeddedLibrdkafka.cs and Impl/EmbeddedAssemblyResolver.cs), so the
+    single Confluent.Kafka.dll file is all that needs to be deployed.
+
+    - Set EmbedLibrdkafka=false to restore the stock behaviour.
+    - Set EmbedLibrdkafkaRuntimes to a subset (e.g. "win-x64") to reduce the
+      size of the resulting assembly.
+  -->
+  <PropertyGroup>
+    <LibrdkafkaRedistVersion>2.15.0</LibrdkafkaRedistVersion>
+    <EmbedLibrdkafka Condition="'$(EmbedLibrdkafka)' == ''">true</EmbedLibrdkafka>
+    <EmbedLibrdkafkaRuntimes Condition="'$(EmbedLibrdkafkaRuntimes)' == ''">win-x64;win-x86;linux-x64;linux-arm64;linux-s390x;osx-x64;osx-arm64</EmbedLibrdkafkaRuntimes>
+    <!-- Ensure the managed dependency assemblies show up in ReferenceCopyLocalPaths so they can be embedded. -->
+    <CopyLocalLockFileAssemblies Condition="'$(EmbedLibrdkafka)' == 'true'">true</CopyLocalLockFileAssemblies>
+    <_EmbedManagedDependencyNames>;System.Memory;System.Buffers;System.Numerics.Vectors;System.Runtime.CompilerServices.Unsafe;</_EmbedManagedDependencyNames>
+  </PropertyGroup>
+
   <ItemGroup>
-    <PackageReference Include="librdkafka.redist" Version="2.15.0">
+    <AssemblyMetadata Include="LibrdkafkaRedistVersion" Value="$(LibrdkafkaRedistVersion)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="librdkafka.redist" Version="$(LibrdkafkaRedistVersion)" GeneratePathProperty="true">
       <PrivateAssets Condition="'$(TargetFrameworkIdentifier)' == '.NETFramework'">None</PrivateAssets>
+      <ExcludeAssets Condition="'$(EmbedLibrdkafka)' == 'true'">all</ExcludeAssets>
+      <PrivateAssets Condition="'$(EmbedLibrdkafka)' == 'true'">all</PrivateAssets>
     </PackageReference>
   </ItemGroup>
 
@@ -34,9 +64,104 @@
     <PackageReference Include="System.Buffers" Version="4.6.1" />
   </ItemGroup>
 
+  <!-- Allows the net462 target to be built on non-Windows machines. -->
+  <ItemGroup Condition=" '$(TargetFramework)' == 'net462' and '$(OS)' != 'Windows_NT' ">
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
   <ItemGroup>
     <None Include="..\..\confluent-logo.png" Pack="true" PackagePath="\" />
     <None Include="..\..\README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
+
+  <UsingTask TaskName="GZipCompressFiles" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <Files ParameterType="Microsoft.Build.Framework.ITaskItem[]" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System.IO" />
+      <Using Namespace="System.IO.Compression" />
+      <Code Type="Fragment" Language="cs">
+        <![CDATA[
+foreach (var item in Files)
+{
+    var source = item.GetMetadata("FullPath");
+    var destination = item.GetMetadata("Destination");
+    if (File.Exists(destination) && File.GetLastWriteTimeUtc(destination) >= File.GetLastWriteTimeUtc(source))
+    {
+        continue;
+    }
+    Directory.CreateDirectory(Path.GetDirectoryName(destination));
+    // write to a temp file + move so that concurrent inner (per target framework)
+    // builds sharing the same destination don't observe partially written files.
+    var temp = destination + "." + Guid.NewGuid().ToString("N") + ".tmp";
+    using (var input = File.OpenRead(source))
+    using (var output = File.Create(temp))
+    using (var gzip = new GZipStream(output, CompressionLevel.Optimal))
+    {
+        input.CopyTo(gzip);
+    }
+    try
+    {
+        if (File.Exists(destination))
+        {
+            File.Delete(destination);
+        }
+        File.Move(temp, destination);
+    }
+    catch (IOException)
+    {
+        // a concurrent build won the race; keep its output.
+    }
+    finally
+    {
+        if (File.Exists(temp))
+        {
+            try { File.Delete(temp); } catch (IOException) { }
+        }
+    }
+}
+]]>
+      </Code>
+    </Task>
+  </UsingTask>
+
+  <Target Name="EmbedSingleFileDependencies"
+          Condition="'$(EmbedLibrdkafka)' == 'true'"
+          BeforeTargets="AssignTargetPaths"
+          DependsOnTargets="ResolveReferences">
+    <Error Condition="'$(Pkglibrdkafka_redist)' == ''"
+           Text="EmbedLibrdkafka is enabled but the librdkafka.redist package path is unknown. Run a NuGet restore first." />
+
+    <ItemGroup>
+      <_LibrdkafkaRid Include="$(EmbedLibrdkafkaRuntimes)" />
+      <_LibrdkafkaNative Include="$(Pkglibrdkafka_redist)/runtimes/%(_LibrdkafkaRid.Identity)/native/*">
+        <Rid>%(_LibrdkafkaRid.Identity)</Rid>
+      </_LibrdkafkaNative>
+      <_LibrdkafkaNative>
+        <Destination>$(BaseIntermediateOutputPath)librdkafka-embed/%(_LibrdkafkaNative.Rid)/%(Filename)%(Extension).gz</Destination>
+        <LogicalName>librdkafka.%(_LibrdkafkaNative.Rid).%(Filename)%(Extension).gz</LogicalName>
+      </_LibrdkafkaNative>
+
+      <_EmbeddedManagedDep Include="@(ReferenceCopyLocalPaths)"
+                           Condition="'%(Extension)' == '.dll' and $(_EmbedManagedDependencyNames.Contains(';%(Filename);'))" />
+      <_EmbeddedManagedDep>
+        <Destination>$(BaseIntermediateOutputPath)managed-embed/$(TargetFramework)/%(Filename)%(Extension).gz</Destination>
+        <LogicalName>embedded.assembly.%(Filename)%(Extension).gz</LogicalName>
+      </_EmbeddedManagedDep>
+    </ItemGroup>
+
+    <GZipCompressFiles Files="@(_LibrdkafkaNative);@(_EmbeddedManagedDep)"
+                       Condition="'@(_LibrdkafkaNative)@(_EmbeddedManagedDep)' != ''" />
+
+    <ItemGroup>
+      <EmbeddedResource Include="@(_LibrdkafkaNative->'%(Destination)');@(_EmbeddedManagedDep->'%(Destination)')"
+                        WithCulture="false"
+                        Type="Non-Resx"
+                        Visible="false" />
+      <!-- The embedded managed dependencies must not be copied next to the output assembly. -->
+      <ReferenceCopyLocalPaths Remove="@(_EmbeddedManagedDep)" />
+    </ItemGroup>
+  </Target>
 
 </Project>
