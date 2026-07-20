@@ -43,6 +43,12 @@
   -->
   <PropertyGroup>
     <LibrdkafkaRedistVersion>2.15.0</LibrdkafkaRedistVersion>
+    <!--
+      Distinguish the self-contained package from the official Confluent.Kafka
+      of the same version (same id + version would collide in the NuGet cache).
+      Override with -p:PackageVersion=... if needed.
+    -->
+    <PackageVersion Condition="'$(EmbedLibrdkafka)' == 'true' and '$(PackageVersion)' == ''">$(VersionPrefix).1</PackageVersion>
     <!-- Ensure the managed dependency assemblies show up in ReferenceCopyLocalPaths so they can be embedded. -->
     <CopyLocalLockFileAssemblies Condition="'$(EmbedLibrdkafka)' == 'true'">true</CopyLocalLockFileAssemblies>
     <_EmbedManagedDependencyNames>;System.Memory;System.Buffers;System.Numerics.Vectors;System.Runtime.CompilerServices.Unsafe;</_EmbedManagedDependencyNames>
@@ -61,8 +67,13 @@
   </ItemGroup>
 
   <ItemGroup Condition=" '$(TargetFramework)' == 'netstandard2.0' or '$(TargetFramework)' == 'net462'">
-    <PackageReference Include="System.Memory" Version="4.6.3" />
-    <PackageReference Include="System.Buffers" Version="4.6.1" />
+    <!-- With EmbedLibrdkafka these are merged/embedded into the assembly and must not surface as package dependencies. -->
+    <PackageReference Include="System.Memory" Version="4.6.3">
+      <PrivateAssets Condition="'$(EmbedLibrdkafka)' == 'true'">all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="System.Buffers" Version="4.6.1">
+      <PrivateAssets Condition="'$(EmbedLibrdkafka)' == 'true'">all</PrivateAssets>
+    </PackageReference>
   </ItemGroup>
 
   <!-- Allows the net462 target to be built on non-Windows machines. -->
