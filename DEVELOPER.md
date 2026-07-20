@@ -85,3 +85,25 @@ MSBuild properties:
 
 Explicitly loading librdkafka from a custom path via `Library.Load(path)`
 still takes precedence over the embedded libraries.
+
+### Packing
+
+`dotnet pack` produces a self-contained NuGet package (no dependencies at all
+declared in the nuspec):
+
+```
+dotnet pack src/Confluent.Kafka/Confluent.Kafka.csproj -c Release
+```
+
+The package version defaults to `$(VersionPrefix).1` (e.g. `2.15.0.1`) so it
+cannot be confused with the official Confluent.Kafka package of the same
+version in the NuGet cache. When packing a variant with a reduced runtime set,
+give it a distinct version, e.g.:
+
+```
+dotnet pack src/Confluent.Kafka/Confluent.Kafka.csproj -c Release \
+    '-p:EmbedLibrdkafkaRuntimes="win-x64;win-x86"' -p:PackageVersion=2.15.0.2
+```
+
+(The runtime list must reach MSBuild quoted; an unquoted semicolon splits the
+property and the build then fails with an explicit error.)

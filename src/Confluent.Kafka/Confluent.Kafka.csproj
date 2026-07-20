@@ -179,6 +179,9 @@ foreach (var item in Files)
       </_EmbeddedManagedDep>
     </ItemGroup>
 
+    <Error Condition="'@(_LibrdkafkaNative)' == ''"
+           Text="EmbedLibrdkafka is enabled but no native librdkafka files matched EmbedLibrdkafkaRuntimes='$(EmbedLibrdkafkaRuntimes)' under '$(Pkglibrdkafka_redist)/runtimes'. Check the runtime identifier list (on the command line pass it quoted, e.g. -p:EmbedLibrdkafkaRuntimes=&quot;win-x64;linux-x64&quot;)." />
+
     <GZipCompressFiles Files="@(_LibrdkafkaNative);@(_EmbeddedManagedDep)"
                        Condition="'@(_LibrdkafkaNative)@(_EmbeddedManagedDep)' != ''" />
 
