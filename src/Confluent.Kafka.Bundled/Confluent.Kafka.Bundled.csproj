@@ -1,0 +1,53 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net462</TargetFramework>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <Authors>Confluent Inc.;Andreas Heider</Authors>
+    <Description>Confluent's .NET Client for Apache Kafka - bundled .NET Framework build</Description>
+    <Copyright>Copyright 2016-2020 Confluent Inc., Andreas Heider</Copyright>
+    <PackageProjectUrl>https://github.com/confluentinc/confluent-kafka-dotnet/</PackageProjectUrl>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/Sofon/confluent-kafka-dotnet.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageIcon>confluent-logo.png</PackageIcon>
+    <PackageId>Confluent.Kafka</PackageId>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Title>Confluent.Kafka</Title>
+    <AssemblyName>Confluent.Kafka</AssemblyName>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <SignAssembly>true</SignAssembly>
+    <AssemblyOriginatorKeyFile>..\Confluent.Kafka\Confluent.Kafka.snk</AssemblyOriginatorKeyFile>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Confluent.Kafka\**\*.cs"
+             Exclude="..\Confluent.Kafka\bin\**\*;..\Confluent.Kafka\obj\**\*" />
+    <Compile Include="BundledNativeBootstrap.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="librdkafka.redist" Version="2.15.0" GeneratePathProperty="true" PrivateAssets="all" />
+    <PackageReference Include="System.Memory" Version="4.5.3" PrivateAssets="all" />
+    <PackageReference Include="System.Buffers" Version="4.5.0" PrivateAssets="all" />
+    <PackageReference Include="Fody" Version="6.9.3" PrivateAssets="all" />
+    <PackageReference Include="Costura.Fody" Version="6.2.0" PrivateAssets="all">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="$(Pkglibrdkafka_redist)\runtimes\win-x64\native\*.dll">
+      <LogicalName>Confluent.Kafka.Bundled.Native.win-x64.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="$(Pkglibrdkafka_redist)\runtimes\win-x86\native\*.dll">
+      <LogicalName>Confluent.Kafka.Bundled.Native.win-x86.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\confluent-logo.png" Pack="true" PackagePath="\" />
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+</Project>
